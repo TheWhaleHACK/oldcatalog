@@ -17,6 +17,7 @@ public class CurentStep
 
 	public string Task = "lll";
 	public Node currentNode;
+	public List<vec4> initialColors = new List<vec4>();
 	public bool isButton = false;
 	public bool isTrigger = false;
 	public bool isRotatableItem = false;
@@ -36,7 +37,15 @@ public class CurentStep
 	[ParameterCondition(nameof(isRotatableItem), 1)]
 	public AxisToRotate rotationAxis = AxisToRotate.z;
 
+	[ShowInEditor]
+	[ParameterSlider(Title = "Позиция активации", Group = "Вектор вращения")]
+	[ParameterCondition(nameof(isButton), 1)]
+	public float threshold;
 
+	[ShowInEditor]
+	[ParameterSlider(Title = "Ось позиции", Group = "Вектор вращения")]
+	[ParameterCondition(nameof(isButton), 1)]
+	public AxisToRotate thresholdAxis = AxisToRotate.z;
 }
 
 [Component(PropertyGuid = "1a1f908f110275755a9826702d3de29738c603cc")]
@@ -72,6 +81,7 @@ public class StepsOfTasks : Component
 		detailInfoLabel = ui.GetWidget(ui.FindWidget("detailInfoLabel")) as WidgetLabel;
 		detailInfoLabel.FontSize = 100;
 		gui.AddChild(vBox, Gui.ALIGN_EXPAND);
+
 	}
 	
 	void Update()
@@ -92,34 +102,79 @@ public class StepsOfTasks : Component
 				switch (step.rotationAxis)
 				{
 
-					case step.AxisToRotate.x:
+					case CurentStep.AxisToRotate.x:
 						if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).x > step.rotationAngle - step.angle && MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).x <= step.rotationAngle + step.angle)
 						{
 							GoToStep(currentStepIndex+1);
 						}
-						break;
-					case step.AxisToRotate.y:
+					break;
+					case CurentStep.AxisToRotate.y:
 						if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).y > step.rotationAngle - step.angle && MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).y <= step.rotationAngle + step.angle)
 						{
 							GoToStep(currentStepIndex+1);
 						}
-						break;
-					case step.AxisToRotate.z:
+					break;
+					case CurentStep.AxisToRotate.z:
 						if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).z > step.rotationAngle - step.angle && MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).z <= step.rotationAngle + step.angle)
 						{
 							GoToStep(currentStepIndex+1);
 						}
-						break;
+					break;
 				}
 				return;				
+			}
+
+			if(step.isButton)
+			{
+				switch(step.thresholdAxis)
+				{
+					case CurentStep.AxisToRotate.x:
+						if(step.currentNode.Position.x<=step.threshold)
+						{
+							GoToStep(currentStepIndex+1);
+						}
+					break;
+					case CurentStep.AxisToRotate.y:
+						if(step.currentNode.Position.y<=step.threshold)
+						{
+							GoToStep(currentStepIndex+1);
+						}
+					break;
+					case CurentStep.AxisToRotate.z:
+						if(step.currentNode.Position.z<=step.threshold)
+						{
+							GoToStep(currentStepIndex+1);
+						}
+					break;
+				}
+				return;
+			}
+
+			if (step.isTrigger)
+			{
+				WorldTrigger thisTrigger = step.currentNode as WorldTrigger;
+				thisTrigger.EventEnter.Connect(trigger_enter);
+				return;
 			}
 		}
 	}
 
+	private void trigger_enter()
+	{
+		GoToStep(currentStepIndex+1);
+	}
+
 	private void GoToStep(int index)
 	{
+
 		currentStepIndex = index;
+		if (currentStepIndex >= Steps.Length)
+		{
+			detailInfoLabel.Text = "Сборка завершена";
+			return;
+		}
 		var step = Steps[currentStepIndex];
+
 		detailInfoLabel.Text = step.Task;
 		
 	}
