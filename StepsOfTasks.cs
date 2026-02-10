@@ -71,7 +71,7 @@ public class StepsOfTasks : Component
 		ui = new UserInterface(gui, UIPath);
 		vBox = ui.GetWidget(ui.FindWidget("vbox")) as WidgetVBox;
 		detailInfoLabel = ui.GetWidget(ui.FindWidget("detailInfoLabel")) as WidgetLabel;
-		detailInfoLabel.FontSize = 100;
+		detailInfoLabel.FontSize = 75;
 		gui.AddChild(vBox, Gui.ALIGN_EXPAND);
 	}
 
@@ -207,7 +207,7 @@ public class StepsOfTasks : Component
 		// Сохраняем цвета только один раз
 		if (step.initialColors.Count > 0) return;
 
-		Object obj = step.currentNode as Object;
+		Unigine.Object obj = step.currentNode as Unigine.Object;
 		if (obj == null) return;
 
 		for (int i = 0; i < obj.NumSurfaces; i++)
@@ -218,7 +218,7 @@ public class StepsOfTasks : Component
 
 	private void ApplyHighlight(CurentStep step)
 	{
-		Object obj = step.currentNode as Object;
+		Unigine.Object obj = step.currentNode as Unigine.Object;
 		if (obj == null) return;
 
 		// Пульсирующий цвет: от красного (1,0,0) к жёлтому (1,1,0)
@@ -237,7 +237,7 @@ public class StepsOfTasks : Component
 
 	private void RestoreOriginalColors(CurentStep step)
 	{
-		Object obj = step.currentNode as Object;
+		Unigine.Object obj = step.currentNode as Unigine.Object;
 		if (obj == null || step.initialColors.Count == 0) return;
 
 		for (int i = 0; i < obj.NumSurfaces; i++)
