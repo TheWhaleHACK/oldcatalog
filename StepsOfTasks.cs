@@ -44,6 +44,11 @@ public class CurentStep
 	[ParameterSlider(Title = "Ось позиции", Group = "Вектор вращения")]
 	[ParameterCondition(nameof(isButton), 1)]
 	public AxisToRotate thresholdAxis = AxisToRotate.z;
+
+	[ShowInEditor]
+	[ParameterSlider(Title = "Нода триггера", Group = "Вектор вращения")]
+	[ParameterCondition(nameof(isTrigger), 1)]
+	public Node triggerNode;
 }
 
 [Component(PropertyGuid = "1a1f908f110275755a9826702d3de29738c603cc")]
@@ -63,6 +68,8 @@ public class StepsOfTasks : Component
 	public int currentStepIndex = -1;
 	private bool isFirstUpdate = true;
 	private float lerpCoefficient = 0f; // для пульсации цвета
+
+	private bool enteredTrigger = false;
 
 	void Init()
 	{
@@ -101,9 +108,15 @@ public class StepsOfTasks : Component
 				ApplyHighlight(step);
 			}
 
+			if(step.isTrigger && step.triggerNode!=null)
+			{
+				ApplyHighlight(step);
+			}
+
 			// Проверка выполнения шага
 			if (step.isRotatableItem)
 			{
+				Log.MessageLine( MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3) );
 				switch (step.rotationAxis)
 				{
 					case CurentStep.AxisToRotate.x:
@@ -160,9 +173,27 @@ public class StepsOfTasks : Component
 			if (step.isTrigger)
 			{
 				WorldTrigger thisTrigger = step.currentNode as WorldTrigger;
-				thisTrigger.EventEnter.Connect(() => CompleteStep(step));
+				thisTrigger.EventEnter.Connect(() => triggerEnter(step));
+				thisTrigger.EventLeave.Connect(triggerLeave);
 				return;
 			}
+		}
+	}
+
+	private void triggerEnter(CurentStep step)
+	{
+		if(enteredTrigger == false)
+		{
+			CompleteStep(step);
+			enteredTrigger = true;
+		}
+	}
+
+	private void triggerLeave()
+	{
+		if(enteredTrigger == true)
+		{
+			enteredTrigger = false;
 		}
 	}
 
@@ -192,6 +223,12 @@ public class StepsOfTasks : Component
 			SaveInitialColors(step);
 			ApplyHighlight(step);
 		}
+
+		if(step.isTrigger && step.triggerNode!=null)
+		{
+			SaveInitialColors(step);
+			ApplyHighlight(step);
+		}
 	}
 
 	private void CompleteStep(CurentStep step)
@@ -207,7 +244,12 @@ public class StepsOfTasks : Component
 		// Сохраняем цвета только один раз
 		if (step.initialColors.Count > 0) return;
 
-		Unigine.Object obj = step.currentNode as Unigine.Object;
+		Unigine.Object obj = null;
+		if(step.isTrigger)
+			obj = step.triggerNode as Unigine.Object;
+		else
+			obj = step.currentNode as Unigine.Object;
+
 		if (obj == null) return;
 
 		for (int i = 0; i < obj.NumSurfaces; i++)
@@ -218,7 +260,12 @@ public class StepsOfTasks : Component
 
 	private void ApplyHighlight(CurentStep step)
 	{
-		Unigine.Object obj = step.currentNode as Unigine.Object;
+		Unigine.Object obj = null;
+		if(step.isTrigger)
+			obj = step.triggerNode as Unigine.Object;
+		else
+			obj = step.currentNode as Unigine.Object;
+
 		if (obj == null) return;
 
 		// Пульсирующий цвет: от красного (1,0,0) к жёлтому (1,1,0)
@@ -237,7 +284,11 @@ public class StepsOfTasks : Component
 
 	private void RestoreOriginalColors(CurentStep step)
 	{
-		Unigine.Object obj = step.currentNode as Unigine.Object;
+		Unigine.Object obj = null;
+		if(step.isTrigger)
+			obj = step.triggerNode as Unigine.Object;
+		else
+			obj = step.currentNode as Unigine.Object;
 		if (obj == null || step.initialColors.Count == 0) return;
 
 		for (int i = 0; i < obj.NumSurfaces; i++)
