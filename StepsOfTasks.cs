@@ -72,10 +72,10 @@ public class StepsOfTasks : Component
 	// === ИСПРАВЛЕНИЯ ДЛЯ ТРИГГЕРОВ ===
 	// Флаг активации ТОЛЬКО для текущего шага с триггером
 	private bool currentStepTriggerActivated = false;
-	// Храним ссылки на делегаты для безопасного отключения
-	private Action<Node> currentTriggerEnterHandler = null;
-	private Action currentTriggerLeaveHandler = null;
-	// Индекс шага, для которого подключены события (для защиты от гонок)
+	// Храним ссылки на делегаты для безопасного отключения (правильный тип!)
+	private Unigine.EventDelegate currentTriggerEnterHandler = null;
+	private Unigine.EventDelegate currentTriggerLeaveHandler = null;
+	// Индекс шага, для которого подключены события
 	private int currentTriggerStepIndex = -1;
 
 	void Init()
@@ -179,9 +179,15 @@ public class StepsOfTasks : Component
 				if (oldStep.triggerNode is WorldTrigger oldTrigger)
 				{
 					if (currentTriggerEnterHandler != null)
+					{
 						oldTrigger.EventEnter.Disconnect(currentTriggerEnterHandler);
+						currentTriggerEnterHandler = null;
+					}
 					if (currentTriggerLeaveHandler != null)
+					{
 						oldTrigger.EventLeave.Disconnect(currentTriggerLeaveHandler);
+						currentTriggerLeaveHandler = null;
+					}
 				}
 			}
 
@@ -220,7 +226,7 @@ public class StepsOfTasks : Component
 				currentStepTriggerActivated = false;
 				currentTriggerStepIndex = currentStepIndex;
 
-				// Создаем делегаты с защитой от гонок данных
+				// Создаем делегаты с правильной сигнатурой и защитой от гонок данных
 				currentTriggerEnterHandler = (Node enteredNode) =>
 				{
 					// Защита: проверяем что мы всё ещё на том же шаге
@@ -230,13 +236,16 @@ public class StepsOfTasks : Component
 					// Главное условие: разрешаем активацию ТОЛЬКО один раз за шаг
 					if (!currentStepTriggerActivated)
 					{
+						currentStepTriggerActivated = true; // Сразу блокируем повторную активацию
 						CompleteStep(step);
-						currentStepTriggerActivated = true; // Блокируем повторную активацию
 					}
 				};
 
-				// Для leave ничего не делаем — флаг НЕ сбрасываем (требование: один раз за шаг)
-				currentTriggerLeaveHandler = () => { };
+				currentTriggerLeaveHandler = (Node leftNode) =>
+				{
+					// Ничего не делаем при выходе — флаг НЕ сбрасываем
+					// (требование: триггер активируется один раз за шаг, даже если пользователь вышел и вернулся)
+				};
 
 				// Подключаем события
 				trigger.EventEnter.Connect(currentTriggerEnterHandler);
@@ -248,7 +257,6 @@ public class StepsOfTasks : Component
 	private void CompleteStep(CurentStep step)
 	{
 		// Восстанавливаем цвет ДО перехода на следующий шаг
-		// (иначе в GoToStep будет восстановлен цвет нового шага)
 		RestoreOriginalColors(step);
 		GoToStep(currentStepIndex + 1);
 	}
