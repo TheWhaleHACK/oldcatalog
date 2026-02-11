@@ -72,7 +72,7 @@ public class StepsOfTasks : Component
 	// === ИСПРАВЛЕНИЯ ДЛЯ ТРИГГЕРОВ ===
 	// Флаг активации ТОЛЬКО для текущего шага с триггером
 	private bool currentStepTriggerActivated = false;
-	// Храним ссылки на делегаты для безопасного отключения (правильный тип!)
+	// Храним ссылки на делегаты для безопасного отключения (без параметров!)
 	private Unigine.EventDelegate currentTriggerEnterHandler = null;
 	private Unigine.EventDelegate currentTriggerLeaveHandler = null;
 	// Индекс шага, для которого подключены события
@@ -201,7 +201,6 @@ public class StepsOfTasks : Component
 		if (currentStepIndex >= Steps.Length)
 		{
 			detailInfoLabel.Text = "Сборка завершена";
-			// Доп. логика завершения (скрытие UI и т.д.)
 			return;
 		}
 
@@ -226,8 +225,8 @@ public class StepsOfTasks : Component
 				currentStepTriggerActivated = false;
 				currentTriggerStepIndex = currentStepIndex;
 
-				// Создаем делегаты с правильной сигнатурой и защитой от гонок данных
-				currentTriggerEnterHandler = (Node enteredNode) =>
+				// Создаем делегаты БЕЗ параметров (правильная сигнатура для Unigine.EventDelegate)
+				currentTriggerEnterHandler = () =>
 				{
 					// Защита: проверяем что мы всё ещё на том же шаге
 					if (currentStepIndex != currentTriggerStepIndex) 
@@ -241,7 +240,7 @@ public class StepsOfTasks : Component
 					}
 				};
 
-				currentTriggerLeaveHandler = (Node leftNode) =>
+				currentTriggerLeaveHandler = () =>
 				{
 					// Ничего не делаем при выходе — флаг НЕ сбрасываем
 					// (требование: триггер активируется один раз за шаг, даже если пользователь вышел и вернулся)
