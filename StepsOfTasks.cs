@@ -55,9 +55,9 @@ public class CurentStep
 	public bool isTriggerActivated = false; // был ли активирован триггер на этом шаге
 	
 	[NonSerialized]
-	public Action onEnterAction; // для хранения callback
+	public EventDelegate enterDelegate; // для хранения делегата EventEnter
 	[NonSerialized]
-	public Action onLeaveAction; // для хранения callback
+	public EventDelegate leaveDelegate; // для хранения делегата EventLeave
 }
 
 [Component(PropertyGuid = "1a1f908f110275755a9826702d3de29738c603cc")]
@@ -180,30 +180,31 @@ public class StepsOfTasks : Component
 			if (step.isTrigger)
 			{
 				// Подключаем события один раз при инициализации шага
-				if (step.triggerNode != null && step.onEnterAction == null && step.onLeaveAction == null)
+				if (step.triggerNode != null && step.enterDelegate == null && step.leaveDelegate == null)
 				{
 					WorldTrigger thisTrigger = step.triggerNode as WorldTrigger;
 					if (thisTrigger != null)
 					{
 						// Отключаем предыдущие подключения, если они были
-						if (step.onEnterAction != null)
+						if (step.enterDelegate != null)
 						{
-							thisTrigger.EventEnter.Disconnect(step.onEnterAction);
-							step.onEnterAction = null;
+							thisTrigger.EventEnter.Disconnect(step.enterDelegate);
+							step.enterDelegate = null;
 						}
-						if (step.onLeaveAction != null)
+						if (step.leaveDelegate != null)
 						{
-							thisTrigger.EventLeave.Disconnect(step.onLeaveAction);
-							step.onLeaveAction = null;
+							thisTrigger.EventLeave.Disconnect(step.leaveDelegate);
+							step.leaveDelegate = null;
 						}
 						
-						// Подключаем с замыканием на конкретный шаг
+						// Создаем делегаты
 						var currentStep = step;
-						step.onEnterAction = () => OnTriggerEnter(currentStep);
-						step.onLeaveAction = () => OnTriggerLeave(currentStep);
+						step.enterDelegate = () => OnTriggerEnter(currentStep);
+						step.leaveDelegate = () => OnTriggerLeave(currentStep);
 						
-						thisTrigger.EventEnter.Connect(step.onEnterAction);
-						thisTrigger.EventLeave.Connect(step.onLeaveAction);
+						// Подключаем
+						thisTrigger.EventEnter.Connect(step.enterDelegate);
+						thisTrigger.EventLeave.Connect(step.leaveDelegate);
 					}
 				}
 				return;
@@ -247,15 +248,15 @@ public class StepsOfTasks : Component
 				WorldTrigger prevTrigger = prevStep.triggerNode as WorldTrigger;
 				if (prevTrigger != null)
 				{
-					if (prevStep.onEnterAction != null)
+					if (prevStep.enterDelegate != null)
 					{
-						prevTrigger.EventEnter.Disconnect(prevStep.onEnterAction);
-						prevStep.onEnterAction = null;
+						prevTrigger.EventEnter.Disconnect(prevStep.enterDelegate);
+						prevStep.enterDelegate = null;
 					}
-					if (prevStep.onLeaveAction != null)
+					if (prevStep.leaveDelegate != null)
 					{
-						prevTrigger.EventLeave.Disconnect(prevStep.onLeaveAction);
-						prevStep.onLeaveAction = null;
+						prevTrigger.EventLeave.Disconnect(prevStep.leaveDelegate);
+						prevStep.leaveDelegate = null;
 					}
 				}
 				prevStep.isTriggerActivated = false;
