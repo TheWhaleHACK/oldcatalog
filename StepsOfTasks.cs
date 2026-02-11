@@ -55,7 +55,9 @@ public class CurentStep
 	public bool isTriggerActivated = false; // был ли активирован триггер на этом шаге
 	
 	[NonSerialized]
-	public bool isEventConnected = false; // подключены ли события триггера
+	public Action onEnterAction; // для хранения callback
+	[NonSerialized]
+	public Action onLeaveAction; // для хранения callback
 }
 
 [Component(PropertyGuid = "1a1f908f110275755a9826702d3de29738c603cc")]
@@ -178,20 +180,30 @@ public class StepsOfTasks : Component
 			if (step.isTrigger)
 			{
 				// Подключаем события один раз при инициализации шага
-				if (step.triggerNode != null && !step.isEventConnected)
+				if (step.triggerNode != null && step.onEnterAction == null && step.onLeaveAction == null)
 				{
 					WorldTrigger thisTrigger = step.triggerNode as WorldTrigger;
 					if (thisTrigger != null)
 					{
 						// Отключаем предыдущие подключения, если они были
-						thisTrigger.EventEnter.Clear();
-						thisTrigger.EventLeave.Clear();
+						if (step.onEnterAction != null)
+						{
+							thisTrigger.EventEnter.Disconnect(step.onEnterAction);
+							step.onEnterAction = null;
+						}
+						if (step.onLeaveAction != null)
+						{
+							thisTrigger.EventLeave.Disconnect(step.onLeaveAction);
+							step.onLeaveAction = null;
+						}
 						
 						// Подключаем с замыканием на конкретный шаг
 						var currentStep = step;
-						thisTrigger.EventEnter.Connect(() => OnTriggerEnter(currentStep));
-						thisTrigger.EventLeave.Connect(() => OnTriggerLeave(currentStep));
-						step.isEventConnected = true;
+						step.onEnterAction = () => OnTriggerEnter(currentStep);
+						step.onLeaveAction = () => OnTriggerLeave(currentStep);
+						
+						thisTrigger.EventEnter.Connect(step.onEnterAction);
+						thisTrigger.EventLeave.Connect(step.onLeaveAction);
 					}
 				}
 				return;
@@ -235,11 +247,18 @@ public class StepsOfTasks : Component
 				WorldTrigger prevTrigger = prevStep.triggerNode as WorldTrigger;
 				if (prevTrigger != null)
 				{
-					prevTrigger.EventEnter.Clear();
-					prevTrigger.EventLeave.Clear();
-					prevStep.isEventConnected = false;
-					prevStep.isTriggerActivated = false;
+					if (prevStep.onEnterAction != null)
+					{
+						prevTrigger.EventEnter.Disconnect(prevStep.onEnterAction);
+						prevStep.onEnterAction = null;
+					}
+					if (prevStep.onLeaveAction != null)
+					{
+						prevTrigger.EventLeave.Disconnect(prevStep.onLeaveAction);
+						prevStep.onLeaveAction = null;
+					}
 				}
+				prevStep.isTriggerActivated = false;
 			}
 		}
 
@@ -257,7 +276,6 @@ public class StepsOfTasks : Component
 
 		// Сбрасываем флаги для нового шага
 		step.isTriggerActivated = false;
-		step.isEventConnected = false;
 
 		// Сохраняем исходные цвета и применяем подсветку
 		if ((step.isRotatableItem || step.isButton || step.isTrigger) && 
