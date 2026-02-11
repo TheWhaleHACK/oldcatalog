@@ -1,282 +1,257 @@
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using Unigine;
-
-[Serializable]
-public class CurentStep
-{
-	public enum AxisToRotate
-	{
-		x = 0,
-		y = 1,
-		z = 2,
-	}
-
-	public string Task = "lll";
-	public Node currentNode;
-	public List<vec4> initialColors = new List<vec4>();
-	public bool isButton = false;
-	public bool isTrigger = false;
-	public bool isRotatableItem = false;
-	public bool isEntered = false; // Флаг входа ДЛЯ КАЖДОГО шага отдельно
-
-	[ShowInEditor]
-	[ParameterSlider(Title = "Угол активации", Group = "Вектор вращения")]
-	[ParameterCondition(nameof(isRotatableItem), 1)]
-	public float rotationAngle;
-
-	[ShowInEditor]
-	[ParameterSlider(Title = "Погрешность вращения", Group = "Вектор вращения")]
-	[ParameterCondition(nameof(isRotatableItem), 1)]
-	public float angle = 5;
-
-	[ShowInEditor]
-	[ParameterSlider(Title = "Ось вращения", Group = "Вектор вращения")]
-	[ParameterCondition(nameof(isRotatableItem), 1)]
-	public AxisToRotate rotationAxis = AxisToRotate.z;
-
-	[ShowInEditor]
-	[ParameterSlider(Title = "Позиция активации", Group = "Вектор вращения")]
-	[ParameterCondition(nameof(isButton), 1)]
-	public float threshold;
-
-	[ShowInEditor]
-	[ParameterSlider(Title = "Ось позиции", Group = "Вектор вращения")]
-	[ParameterCondition(nameof(isButton), 1)]
-	public AxisToRotate thresholdAxis = AxisToRotate.z;
-
-	[ShowInEditor]
-	[ParameterSlider(Title = "Нода триггера", Group = "Вектор вращения")]
-	[ParameterCondition(nameof(isTrigger), 1)]
-	public Node triggerNode;
-}
-
 [Component(PropertyGuid = "1a1f908f110275755a9826702d3de29738c603cc")]
 public class StepsOfTasks : Component
 {
-	[ShowInEditor] public CurentStep[] Steps = new CurentStep[0];
+    [ShowInEditor] public CurentStep[] Steps = new CurentStep[0];
 
-	[ShowInEditor]
-	[ParameterFile(Filter = ".ui")]
-	private string UIPath;
+    [ShowInEditor]
+    [ParameterFile(Filter = ".ui")]
+    private string UIPath;
 
-	private ObjectGui objectGui;
-	private UserInterface ui = null;
-	private Gui gui = null;
-	private WidgetLabel detailInfoLabel;
-	private WidgetVBox vBox = null;
-	public int currentStepIndex = -1;
-	private bool isFirstUpdate = true;
-	private float lerpCoefficient = 0f;
+    private ObjectGui objectGui;
+    private UserInterface ui = null;
+    private Gui gui = null;
+    private WidgetLabel detailInfoLabel;
+    private WidgetVBox vBox = null;
+    public int currentStepIndex = -1;
+    private bool isFirstUpdate = true;
+    private float lerpCoefficient = 0f; // для пульсации цвета
 
-	// УДАЛЕНО: глобальный флаг enteredTrigger — он больше не нужен
+    private Dictionary<Node, bool> triggerStates = new Dictionary<Node, bool>();
 
-	void Init()
-	{
-		objectGui = node as ObjectGui;
-		gui = objectGui.GetGui();
-		ui = new UserInterface(gui, UIPath);
-		vBox = ui.GetWidget(ui.FindWidget("vbox")) as WidgetVBox;
-		detailInfoLabel = ui.GetWidget(ui.FindWidget("detailInfoLabel")) as WidgetLabel;
-		detailInfoLabel.FontSize = 75;
-		gui.AddChild(vBox, Gui.ALIGN_EXPAND);
+    void Init()
+    {
+        objectGui = node as ObjectGui;
+        gui = objectGui.GetGui();
+        ui = new UserInterface(gui, UIPath);
+        vBox = ui.GetWidget(ui.FindWidget("vbox")) as WidgetVBox;
+        detailInfoLabel = ui.GetWidget(ui.FindWidget("detailInfoLabel")) as WidgetLabel;
+        detailInfoLabel.FontSize = 75;
+        gui.AddChild(vBox, Gui.ALIGN_EXPAND);
+    }
 
-		// Подписка на события триггеров ОДИН РАЗ при инициализации
-		SubscribeTriggers();
-	}
+    void Update()
+    {
+        // Обновляем коэффициент пульсации
+        lerpCoefficient += 0.01f;
+        if (lerpCoefficient > 1.0f)
+        {
+            lerpCoefficient = 0.0f;
+        }
 
-	// Новый метод: однократная подписка на все триггеры
-	private void SubscribeTriggers()
-	{
-		for (int i = 0; i < Steps.Length; i++)
-		{
-			var step = Steps[i];
-			if (step.isTrigger && step.triggerNode != null)
-			{
-				WorldTrigger trigger = step.triggerNode as WorldTrigger;
-				if (trigger != null)
-				{
-					int stepIndex = i; // Захватываем индекс для замыкания
-					trigger.EventEnter.Connect(() => 
-					{
-						// Выполняем шаг ТОЛЬКО если:
-						// 1. Это текущий активный шаг
-						// 2. Мы ещё не вошли в триггер для этого шага
-						if (currentStepIndex == stepIndex && !step.isEntered)
-						{
-							CompleteStep(step);
-							step.isEntered = true;
-						}
-					});
-					
-					trigger.EventLeave.Connect(() => 
-					{
-						// Сбрасываем флаг ТОЛЬКО для текущего шага
-						if (currentStepIndex == stepIndex && step.isEntered)
-						{
-							step.isEntered = false;
-						}
-					});
-				}
-			}
-		}
-	}
+        if (isFirstUpdate)
+        {
+            isFirstUpdate = false;
+            GoToStep(0);
+            return;
+        }
 
-	void Update()
-	{
-		lerpCoefficient += 0.01f;
-		if (lerpCoefficient > 1.0f)
-		{
-			lerpCoefficient = 0.0f;
-		}
+        if (currentStepIndex >= 0 && currentStepIndex < Steps.Length)
+        {
+            var step = Steps[currentStepIndex];
 
-		if (isFirstUpdate)
-		{
-			isFirstUpdate = false;
-			GoToStep(0);
-			return;
-		}
+            // Применяем пульсирующую подсветку для текущего шага (если объект видимый)
+            if ((step.isRotatableItem || step.isButton) && step.currentNode != null)
+            {
+                ApplyHighlight(step);
+            }
 
-		if (currentStepIndex >= 0 && currentStepIndex < Steps.Length)
-		{
-			var step = Steps[currentStepIndex];
+            if(step.isTrigger && step.triggerNode!=null)
+            {
+                ApplyHighlight(step);
+            }
 
-			// Применяем пульсирующую подсветку
-			if ((step.isRotatableItem || step.isButton || step.isTrigger) && 
-				(step.currentNode != null || (step.isTrigger && step.triggerNode != null)))
-			{
-				ApplyHighlight(step);
-			}
+            // Проверка выполнения шага
+            if (step.isRotatableItem)
+            {
+                Log.MessageLine( MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3) );
+                switch (step.rotationAxis)
+                {
+                    case CurentStep.AxisToRotate.x:
+                        if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).x > step.rotationAngle - step.angle &&
+                            MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).x <= step.rotationAngle + step.angle)
+                        {
+                            CompleteStep(step);
+                        }
+                        break;
+                    case CurentStep.AxisToRotate.y:
+                        if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).y > step.rotationAngle - step.angle &&
+                            MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).y <= step.rotationAngle + step.angle)
+                        {
+                            CompleteStep(step);
+                        }
+                        break;
+                    case CurentStep.AxisToRotate.z:
+                        if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).z > step.rotationAngle - step.angle &&
+                            MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).z <= step.rotationAngle + step.angle)
+                        {
+                            CompleteStep(step);
+                        }
+                        break;
+                }
+                return;
+            }
 
-			// Проверка выполнения шага для вращаемых объектов
-			if (step.isRotatableItem && step.currentNode != null)
-			{
-				vec3 rotation = MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3);
-				float currentAngle = 0f;
-				
-				switch (step.rotationAxis)
-				{
-					case CurentStep.AxisToRotate.x: currentAngle = rotation.x; break;
-					case CurentStep.AxisToRotate.y: currentAngle = rotation.y; break;
-					case CurentStep.AxisToRotate.z: currentAngle = rotation.z; break;
-				}
+            if (step.isButton)
+            {
+                switch (step.thresholdAxis)
+                {
+                    case CurentStep.AxisToRotate.x:
+                        if (step.currentNode.Position.x <= step.threshold)
+                        {
+                            CompleteStep(step);
+                        }
+                        break;
+                    case CurentStep.AxisToRotate.y:
+                        if (step.currentNode.Position.y <= step.threshold)
+                        {
+                            CompleteStep(step);
+                        }
+                        break;
+                    case CurentStep.AxisToRotate.z:
+                        if (step.currentNode.Position.z <= step.threshold)
+                        {
+                            CompleteStep(step);
+                        }
+                        break;
+                }
+                return;
+            }
 
-				if (currentAngle > step.rotationAngle - step.angle && 
-					currentAngle <= step.rotationAngle + step.angle)
-				{
-					CompleteStep(step);
-				}
-				return;
-			}
+            if (step.isTrigger)
+            {
+                // Подключаем обработчики только один раз при инициализации
+                WorldTrigger thisTrigger = step.currentNode as WorldTrigger;
+                if (!triggerStates.ContainsKey(thisTrigger))
+                {
+                    triggerStates[thisTrigger] = false;
+                    thisTrigger.EventEnter.Connect(() => triggerEnter(step));
+                    thisTrigger.EventLeave.Connect(() => triggerLeave(step));
+                }
+                return;
+            }
+        }
+    }
 
-			// Проверка выполнения шага для кнопок
-			if (step.isButton && step.currentNode != null)
-			{
-				float currentPosition = 0f;
-				switch (step.thresholdAxis)
-				{
-					case CurentStep.AxisToRotate.x: currentPosition = step.currentNode.Position.x; break;
-					case CurentStep.AxisToRotate.y: currentPosition = step.currentNode.Position.y; break;
-					case CurentStep.AxisToRotate.z: currentPosition = step.currentNode.Position.z; break;
-				}
+    private void triggerEnter(CurentStep step)
+    {
+        WorldTrigger trigger = step.currentNode as WorldTrigger;
+        if (!triggerStates[trigger])
+        {
+            CompleteStep(step);
+            triggerStates[trigger] = true;
+        }
+    }
 
-				if (currentPosition <= step.threshold)
-				{
-					CompleteStep(step);
-				}
-				return;
-			}
+    private void triggerLeave(CurentStep step)
+    {
+        WorldTrigger trigger = step.currentNode as WorldTrigger;
+        if (triggerStates.ContainsKey(trigger))
+        {
+            triggerStates[trigger] = false;
+        }
+    }
 
-			// ВАЖНО: УДАЛЕНА ПОДПИСКА НА СОБЫТИЯ ТРИГГЕРА ИЗ UPDATE!
-			// Подписка происходит один раз в Init() через SubscribeTriggers()
-		}
-	}
+    private void GoToStep(int index)
+    {
+        // Восстанавливаем исходный цвет предыдущего шага (если был)
+        if (currentStepIndex >= 0 && currentStepIndex < Steps.Length)
+        {
+            RestoreOriginalColors(Steps[currentStepIndex]);
+        }
 
-	private void GoToStep(int index)
-	{
-		// Восстанавливаем цвет предыдущего шага
-		if (currentStepIndex >= 0 && currentStepIndex < Steps.Length)
-		{
-			RestoreOriginalColors(Steps[currentStepIndex]);
-			// Сбрасываем флаг входа для предыдущего шага с триггером
-			if (Steps[currentStepIndex].isTrigger)
-			{
-				Steps[currentStepIndex].isEntered = false;
-			}
-		}
+        currentStepIndex = index;
 
-		currentStepIndex = index;
+        if (currentStepIndex >= Steps.Length)
+        {
+            detailInfoLabel.Text = "Сборка завершена";
+            // Скрыть интерфейс или выполнить завершающие действия
+            return;
+        }
 
-		if (currentStepIndex >= Steps.Length)
-		{
-			detailInfoLabel.Text = "Сборка завершена";
-			// Опционально: скрыть интерфейс
-			// gui.RemoveChild(vBox);
-			return;
-		}
+        var step = Steps[currentStepIndex];
+        detailInfoLabel.Text = step.Task;
 
-		var step = Steps[currentStepIndex];
-		detailInfoLabel.Text = step.Task;
+        // Сохраняем исходные цвета и применяем подсветку
+        if ((step.isRotatableItem || step.isButton) && step.currentNode != null)
+        {
+            SaveInitialColors(step);
+            ApplyHighlight(step);
+        }
 
-		// Сохраняем исходные цвета и применяем подсветку
-		if ((step.isRotatableItem || step.isButton || step.isTrigger) && 
-			(step.currentNode != null || (step.isTrigger && step.triggerNode != null)))
-		{
-			SaveInitialColors(step);
-			ApplyHighlight(step);
-		}
-	}
+        if(step.isTrigger && step.triggerNode!=null)
+        {
+            SaveInitialColors(step);
+            ApplyHighlight(step);
+        }
+    }
 
-	private void CompleteStep(CurentStep step)
-	{
-		RestoreOriginalColors(step);
-		GoToStep(currentStepIndex + 1);
-	}
+    private void CompleteStep(CurentStep step)
+    {
+        // Возвращаем исходный цвет объекта
+        RestoreOriginalColors(step);
+        // Переходим к следующему шагу
+        GoToStep(currentStepIndex + 1);
+    }
 
-	private void SaveInitialColors(CurentStep step)
-	{
-		if (step.initialColors.Count > 0) return;
+    private void SaveInitialColors(CurentStep step)
+    {
+        // Сохраняем цвета только один раз
+        if (step.initialColors.Count > 0) return;
 
-		Unigine.Object obj = step.isTrigger ? step.triggerNode as Unigine.Object : step.currentNode as Unigine.Object;
-		if (obj == null) return;
+        Unigine.Object obj = null;
+        if(step.isTrigger)
+            obj = step.triggerNode as Unigine.Object;
+        else
+            obj = step.currentNode as Unigine.Object;
 
-		for (int i = 0; i < obj.NumSurfaces; i++)
-		{
-			step.initialColors.Add(obj.GetMaterialParameterFloat4("albedo_color", i));
-		}
-	}
+        if (obj == null) return;
 
-	private void ApplyHighlight(CurentStep step)
-	{
-		Unigine.Object obj = step.isTrigger ? step.triggerNode as Unigine.Object : step.currentNode as Unigine.Object;
-		if (obj == null) return;
+        for (int i = 0; i < obj.NumSurfaces; i++)
+        {
+            step.initialColors.Add(obj.GetMaterialParameterFloat4("albedo_color", i));
+        }
+    }
 
-		vec4 highlightColor = MathLib.Lerp(
-			new vec4(1f, 0f, 0f, 1.0f),
-			new vec4(1f, 1f, 0f, 1.0f),
-			lerpCoefficient
-		);
+    private void ApplyHighlight(CurentStep step)
+    {
+        Unigine.Object obj = null;
+        if(step.isTrigger)
+            obj = step.triggerNode as Unigine.Object;
+        else
+            obj = step.currentNode as Unigine.Object;
 
-		for (int i = 0; i < obj.NumSurfaces; i++)
-		{
-			obj.SetMaterialState("auxiliary", 1, i);
-			obj.SetMaterialParameterFloat4("albedo_color", highlightColor, i);
-		}
-	}
+        if (obj == null) return;
 
-	private void RestoreOriginalColors(CurentStep step)
-	{
-		Unigine.Object obj = step.isTrigger ? step.triggerNode as Unigine.Object : step.currentNode as Unigine.Object;
-		if (obj == null || step.initialColors.Count == 0) return;
+        // Пульсирующий цвет: от красного (1,0,0) к жёлтому (1,1,0)
+        vec4 highlightColor = MathLib.Lerp(
+            new vec4(1f, 0f, 0f, 1.0f),
+            new vec4(1f, 1f, 0f, 1.0f),
+            lerpCoefficient
+        );
 
-		for (int i = 0; i < obj.NumSurfaces; i++)
-		{
-			if (i < step.initialColors.Count)
-			{
-				obj.SetMaterialParameterFloat4("albedo_color", step.initialColors[i], i);
-				obj.SetMaterialState("auxiliary", 0, i);
-			}
-		}
-	}
+        for (int i = 0; i < obj.NumSurfaces; i++)
+        {
+            obj.SetMaterialState("auxiliary", 1, i);
+            obj.SetMaterialParameterFloat4("albedo_color", highlightColor, i);
+        }
+    }
+
+    private void RestoreOriginalColors(CurentStep step)
+    {
+        Unigine.Object obj = null;
+        if(step.isTrigger)
+            obj = step.triggerNode as Unigine.Object;
+        else
+            obj = step.currentNode as Unigine.Object;
+        if (obj == null || step.initialColors.Count == 0) return;
+
+        for (int i = 0; i < obj.NumSurfaces; i++)
+        {
+            if (i < step.initialColors.Count)
+            {
+                obj.SetMaterialParameterFloat4("albedo_color", step.initialColors[i], i);
+                obj.SetMaterialState("auxiliary", 0, i); // отключаем auxiliary state
+            }
+        }
+    }
 }
