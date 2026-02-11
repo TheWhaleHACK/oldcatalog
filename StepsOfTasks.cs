@@ -49,15 +49,6 @@ public class CurentStep
 	[ParameterSlider(Title = "Нода триггера", Group = "Вектор вращения")]
 	[ParameterCondition(nameof(isTrigger), 1)]
 	public Node triggerNode;
-	
-	// Новые поля для управления состоянием триггера
-	[NonSerialized]
-	public bool isTriggerActivated = false; // был ли активирован триггер на этом шаге
-	
-	[NonSerialized]
-	public EventDelegate enterDelegate; // для хранения делегата EventEnter
-	[NonSerialized]
-	public EventDelegate leaveDelegate; // для хранения делегата EventLeave
 }
 
 [Component(PropertyGuid = "1a1f908f110275755a9826702d3de29738c603cc")]
@@ -77,6 +68,15 @@ public class StepsOfTasks : Component
 	public int currentStepIndex = -1;
 	private bool isFirstUpdate = true;
 	private float lerpCoefficient = 0f; // для пульсации цвета
+
+	// === ИСПРАВЛЕНИЯ ДЛЯ ТРИГГЕРОВ ===
+	// Флаг активации ТОЛЬКО для текущего шага с триггером
+	private bool currentStepTriggerActivated = false;
+	// Храним ссылки на делегаты для безопасного отключения
+	private Action<Node> currentTriggerEnterHandler = null;
+	private Action currentTriggerLeaveHandler = null;
+	// Индекс шага, для которого подключены события (для защиты от гонок)
+	private int currentTriggerStepIndex = -1;
 
 	void Init()
 	{
@@ -109,202 +109,157 @@ public class StepsOfTasks : Component
 		{
 			var step = Steps[currentStepIndex];
 
-			// Применяем пульсирующую подсветку для текущего шага (если объект видимый)
+			// Применяем пульсирующую подсветку для текущего шага
 			if ((step.isRotatableItem || step.isButton) && step.currentNode != null)
 			{
 				ApplyHighlight(step);
 			}
-
-			if(step.isTrigger && step.triggerNode!=null)
+			else if (step.isTrigger && step.triggerNode != null)
 			{
 				ApplyHighlight(step);
 			}
 
-			// Проверка выполнения шага
+			// Проверка выполнения шага для вращаемых объектов
 			if (step.isRotatableItem)
 			{
-				Log.MessageLine( MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3) );
+				var rotation = MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3);
 				switch (step.rotationAxis)
 				{
 					case CurentStep.AxisToRotate.x:
-						if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).x > step.rotationAngle - step.angle &&
-							MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).x <= step.rotationAngle + step.angle)
-						{
+						if (rotation.x > step.rotationAngle - step.angle && rotation.x <= step.rotationAngle + step.angle)
 							CompleteStep(step);
-						}
 						break;
 					case CurentStep.AxisToRotate.y:
-						if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).y > step.rotationAngle - step.angle &&
-							MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).y <= step.rotationAngle + step.angle)
-						{
+						if (rotation.y > step.rotationAngle - step.angle && rotation.y <= step.rotationAngle + step.angle)
 							CompleteStep(step);
-						}
 						break;
 					case CurentStep.AxisToRotate.z:
-						if (MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).z > step.rotationAngle - step.angle &&
-							MathLib.DecomposeRotationXYZ(step.currentNode.GetRotation().Mat3).z <= step.rotationAngle + step.angle)
-						{
+						if (rotation.z > step.rotationAngle - step.angle && rotation.z <= step.rotationAngle + step.angle)
 							CompleteStep(step);
-						}
 						break;
 				}
 				return;
 			}
 
+			// Проверка выполнения шага для кнопок
 			if (step.isButton)
 			{
 				switch (step.thresholdAxis)
 				{
 					case CurentStep.AxisToRotate.x:
 						if (step.currentNode.Position.x <= step.threshold)
-						{
 							CompleteStep(step);
-						}
 						break;
 					case CurentStep.AxisToRotate.y:
 						if (step.currentNode.Position.y <= step.threshold)
-						{
 							CompleteStep(step);
-						}
 						break;
 					case CurentStep.AxisToRotate.z:
 						if (step.currentNode.Position.z <= step.threshold)
-						{
 							CompleteStep(step);
-						}
 						break;
 				}
 				return;
 			}
 
-			if (step.isTrigger)
-			{
-				// Подключаем события один раз при инициализации шага
-				if (step.triggerNode != null && step.enterDelegate == null && step.leaveDelegate == null)
-				{
-					WorldTrigger thisTrigger = step.triggerNode as WorldTrigger;
-					if (thisTrigger != null)
-					{
-						// Отключаем предыдущие подключения, если они были
-						if (step.enterDelegate != null)
-						{
-							thisTrigger.EventEnter.Disconnect(step.enterDelegate);
-							step.enterDelegate = null;
-						}
-						if (step.leaveDelegate != null)
-						{
-							thisTrigger.EventLeave.Disconnect(step.leaveDelegate);
-							step.leaveDelegate = null;
-						}
-						
-						// Создаем делегаты
-						var currentStep = step;
-						step.enterDelegate = () => OnTriggerEnter(currentStep);
-						step.leaveDelegate = () => OnTriggerLeave(currentStep);
-						
-						// Подключаем
-						thisTrigger.EventEnter.Connect(step.enterDelegate);
-						thisTrigger.EventLeave.Connect(step.leaveDelegate);
-					}
-				}
-				return;
-			}
+			// ТРИГГЕРЫ БОЛЬШЕ НЕ ОБРАБАТЫВАЮТСЯ В UPDATE!
+			// Их логика полностью перенесена в событийную модель (GoToStep)
 		}
 	}
 
-	private void OnTriggerEnter(CurentStep step)
-	{
-		// Проверяем, что это текущий шаг и триггер еще не активирован
-		if (currentStepIndex >= 0 && 
-			currentStepIndex < Steps.Length && 
-			Steps[currentStepIndex] == step && 
-			!step.isTriggerActivated)
-		{
-			CompleteStep(step);
-			step.isTriggerActivated = true;
-		}
-	}
-
-	private void OnTriggerLeave(CurentStep step)
-	{
-		// Сбрасываем флаг только для конкретного шага
-		if (step != null)
-		{
-			step.isTriggerActivated = false;
-		}
-	}
-
+	// === КРИТИЧЕСКИ ВАЖНО: управление событиями ТОЛЬКО при смене шага ===
 	private void GoToStep(int index)
 	{
-		// Восстанавливаем исходный цвет предыдущего шага (если был)
+		// 1. Отключаем события ПРЕДЫДУЩЕГО триггер-шага
 		if (currentStepIndex >= 0 && currentStepIndex < Steps.Length)
 		{
-			var prevStep = Steps[currentStepIndex];
-			RestoreOriginalColors(prevStep);
-			
-			// Отключаем события триггера у предыдущего шага
-			if (prevStep.isTrigger && prevStep.triggerNode != null)
+			var oldStep = Steps[currentStepIndex];
+			if (oldStep.isTrigger && oldStep.triggerNode != null)
 			{
-				WorldTrigger prevTrigger = prevStep.triggerNode as WorldTrigger;
-				if (prevTrigger != null)
+				if (oldStep.triggerNode is WorldTrigger oldTrigger)
 				{
-					if (prevStep.enterDelegate != null)
-					{
-						prevTrigger.EventEnter.Disconnect(prevStep.enterDelegate);
-						prevStep.enterDelegate = null;
-					}
-					if (prevStep.leaveDelegate != null)
-					{
-						prevTrigger.EventLeave.Disconnect(prevStep.leaveDelegate);
-						prevStep.leaveDelegate = null;
-					}
+					if (currentTriggerEnterHandler != null)
+						oldTrigger.EventEnter.Disconnect(currentTriggerEnterHandler);
+					if (currentTriggerLeaveHandler != null)
+						oldTrigger.EventLeave.Disconnect(currentTriggerLeaveHandler);
 				}
-				prevStep.isTriggerActivated = false;
 			}
+
+			// Восстанавливаем цвет предыдущего шага
+			RestoreOriginalColors(oldStep);
 		}
 
 		currentStepIndex = index;
 
+		// Завершение тренировки
 		if (currentStepIndex >= Steps.Length)
 		{
 			detailInfoLabel.Text = "Сборка завершена";
-			// Скрыть интерфейс или выполнить завершающие действия
+			// Доп. логика завершения (скрытие UI и т.д.)
 			return;
 		}
 
 		var step = Steps[currentStepIndex];
 		detailInfoLabel.Text = step.Task;
 
-		// Сбрасываем флаги для нового шага
-		step.isTriggerActivated = false;
-
 		// Сохраняем исходные цвета и применяем подсветку
-		if ((step.isRotatableItem || step.isButton || step.isTrigger) && 
-			(step.currentNode != null || step.triggerNode != null))
+		if ((step.isRotatableItem || step.isButton) && step.currentNode != null)
 		{
 			SaveInitialColors(step);
 			ApplyHighlight(step);
+		}
+		else if (step.isTrigger && step.triggerNode != null)
+		{
+			SaveInitialColors(step);
+			ApplyHighlight(step);
+
+			// 2. Подключаем события ТОЛЬКО для НОВОГО триггер-шага
+			if (step.triggerNode is WorldTrigger trigger)
+			{
+				// Сбрасываем флаг активации для НОВОГО шага
+				currentStepTriggerActivated = false;
+				currentTriggerStepIndex = currentStepIndex;
+
+				// Создаем делегаты с защитой от гонок данных
+				currentTriggerEnterHandler = (Node enteredNode) =>
+				{
+					// Защита: проверяем что мы всё ещё на том же шаге
+					if (currentStepIndex != currentTriggerStepIndex) 
+						return;
+					
+					// Главное условие: разрешаем активацию ТОЛЬКО один раз за шаг
+					if (!currentStepTriggerActivated)
+					{
+						CompleteStep(step);
+						currentStepTriggerActivated = true; // Блокируем повторную активацию
+					}
+				};
+
+				// Для leave ничего не делаем — флаг НЕ сбрасываем (требование: один раз за шаг)
+				currentTriggerLeaveHandler = () => { };
+
+				// Подключаем события
+				trigger.EventEnter.Connect(currentTriggerEnterHandler);
+				trigger.EventLeave.Connect(currentTriggerLeaveHandler);
+			}
 		}
 	}
 
 	private void CompleteStep(CurentStep step)
 	{
-		// Возвращаем исходный цвет объекта
+		// Восстанавливаем цвет ДО перехода на следующий шаг
+		// (иначе в GoToStep будет восстановлен цвет нового шага)
 		RestoreOriginalColors(step);
-		// Переходим к следующему шагу
 		GoToStep(currentStepIndex + 1);
 	}
 
 	private void SaveInitialColors(CurentStep step)
 	{
-		// Сохраняем цвета только один раз
 		if (step.initialColors.Count > 0) return;
 
-		Unigine.Object obj = null;
-		if(step.isTrigger)
-			obj = step.triggerNode as Unigine.Object;
-		else
-			obj = step.currentNode as Unigine.Object;
+		Unigine.Object obj = step.isTrigger ? 
+			(step.triggerNode as Unigine.Object) : 
+			(step.currentNode as Unigine.Object);
 
 		if (obj == null) return;
 
@@ -316,15 +271,12 @@ public class StepsOfTasks : Component
 
 	private void ApplyHighlight(CurentStep step)
 	{
-		Unigine.Object obj = null;
-		if(step.isTrigger)
-			obj = step.triggerNode as Unigine.Object;
-		else
-			obj = step.currentNode as Unigine.Object;
+		Unigine.Object obj = step.isTrigger ? 
+			(step.triggerNode as Unigine.Object) : 
+			(step.currentNode as Unigine.Object);
 
 		if (obj == null) return;
 
-		// Пульсирующий цвет: от красного (1,0,0) к жёлтому (1,1,0)
 		vec4 highlightColor = MathLib.Lerp(
 			new vec4(1f, 0f, 0f, 1.0f),
 			new vec4(1f, 1f, 0f, 1.0f),
@@ -340,11 +292,10 @@ public class StepsOfTasks : Component
 
 	private void RestoreOriginalColors(CurentStep step)
 	{
-		Unigine.Object obj = null;
-		if(step.isTrigger)
-			obj = step.triggerNode as Unigine.Object;
-		else
-			obj = step.currentNode as Unigine.Object;
+		Unigine.Object obj = step.isTrigger ? 
+			(step.triggerNode as Unigine.Object) : 
+			(step.currentNode as Unigine.Object);
+		
 		if (obj == null || step.initialColors.Count == 0) return;
 
 		for (int i = 0; i < obj.NumSurfaces; i++)
@@ -352,7 +303,7 @@ public class StepsOfTasks : Component
 			if (i < step.initialColors.Count)
 			{
 				obj.SetMaterialParameterFloat4("albedo_color", step.initialColors[i], i);
-				obj.SetMaterialState("auxiliary", 0, i); // отключаем auxiliary state
+				obj.SetMaterialState("auxiliary", 0, i);
 			}
 		}
 	}
