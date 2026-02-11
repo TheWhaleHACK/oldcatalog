@@ -16,7 +16,7 @@ public class StepsOfTasks : Component
     private bool isFirstUpdate = true;
     private float lerpCoefficient = 0f; // для пульсации цвета
 
-    private Dictionary<Node, bool> triggerStates = new Dictionary<Node, bool>();
+    private Dictionary<string, bool> stepTriggerStates = new Dictionary<string, bool>();
 
     void Init()
     {
@@ -121,9 +121,11 @@ public class StepsOfTasks : Component
             {
                 // Подключаем обработчики только один раз при инициализации
                 WorldTrigger thisTrigger = step.currentNode as WorldTrigger;
-                if (!triggerStates.ContainsKey(thisTrigger))
+                string stepKey = $"{currentStepIndex}_{thisTrigger.NodeId}";
+                
+                if (!stepTriggerStates.ContainsKey(stepKey))
                 {
-                    triggerStates[thisTrigger] = false;
+                    stepTriggerStates[stepKey] = false;
                     thisTrigger.EventEnter.Connect(() => triggerEnter(step));
                     thisTrigger.EventLeave.Connect(() => triggerLeave(step));
                 }
@@ -135,19 +137,23 @@ public class StepsOfTasks : Component
     private void triggerEnter(CurentStep step)
     {
         WorldTrigger trigger = step.currentNode as WorldTrigger;
-        if (!triggerStates[trigger])
+        string stepKey = $"{currentStepIndex}_{trigger.NodeId}";
+        
+        if (!stepTriggerStates.ContainsKey(stepKey) || !stepTriggerStates[stepKey])
         {
             CompleteStep(step);
-            triggerStates[trigger] = true;
+            stepTriggerStates[stepKey] = true;
         }
     }
 
     private void triggerLeave(CurentStep step)
     {
         WorldTrigger trigger = step.currentNode as WorldTrigger;
-        if (triggerStates.ContainsKey(trigger))
+        string stepKey = $"{currentStepIndex}_{trigger.NodeId}";
+        
+        if (stepTriggerStates.ContainsKey(stepKey))
         {
-            triggerStates[trigger] = false;
+            stepTriggerStates[stepKey] = false;
         }
     }
 
