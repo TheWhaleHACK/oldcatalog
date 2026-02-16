@@ -1,21 +1,20 @@
 using System.Collections;
 using System.Collections.Generic;
 using Unigine;
-
 [Component(PropertyGuid = "f91e5a02b9cea2a6cdf2ada59a9014c3fd89ceb2")]
 public class buttonSound : Component
 {
-    [ShowInEditor][Parameter(Title = "Sound Source Node")] private SoundSource soundSource;  // Нода типа SoundSource
-    //[ShowInEditor][ParameterSlider(Title = "Button Close Voice")] private Node voiceCloseButton;
+    [ShowInEditor][Parameter(Title = "Sound Source Node")] private SoundSource soundSource;
     [ShowInEditor][ParameterSlider(Title = "Button Open Voice")] private Node voiceOpenButton;
     [ShowInEditor][ParameterSlider(Title = "Button Open Doors")] private Node openDoorsButton;
     [ShowInEditor][ParameterSlider(Title = "Button Close Doors")] private Node closeDoorsButton;
     [ShowInEditor][ParameterSlider(Title = "Button Stop Kran")] private Node stopKrannButton;
     [ShowInEditor][ParameterSlider(Title = "Button Horn")] private Node hornButton;
-
+    
     private bool isReadySoundClose = true;
-    private bool isReadySoundOtherButtons = true; // Для остальных кнопок
-    public float ThresholdZ = -3.58037f; // Пороговое значение по оси Z
+    private bool wasOtherButtonsPressed = false; // Для отслеживания предыдущего состояния
+    
+    public float ThresholdZ = -3.58037f;
 
     private bool IsButtonPressed(Node button)
     {
@@ -29,54 +28,40 @@ public class buttonSound : Component
 
     void Update()
     {
-        // Проверяем состояние нажимных кнопок отдельно
         bool closeDoorsPressed = IsTumblerPressed(closeDoorsButton);
         bool stopKrannPressed = IsButtonPressed(stopKrannButton);
 
-        // Проверяем остальные ненажимные кнопки
         bool otherButtonsPressed =
-            //IsButtonPressed(voiceCloseButton) ||
             IsButtonPressed(voiceOpenButton) ||
             IsButtonPressed(openDoorsButton) ||
             IsButtonPressed(hornButton);
-            // IsButtonPressed(stopKrannButton);
 
+        // Обработка нажимных кнопок (которые нужно удерживать)
         if (closeDoorsPressed || stopKrannPressed)
         {
             if (soundSource != null && !soundSource.IsPlaying && isReadySoundClose)
             {
-                soundSource.Play(); // Воспроизвести звук
+                soundSource.Play();
             }
-            isReadySoundClose = false; // Заблокировать повторный вызов до отпускания кнопки
+            isReadySoundClose = false;
         }
         else
         {
-            isReadySoundClose = true; // Сбрасываем готовность для кнопки Close Doors
+            isReadySoundClose = true;
         }
 
-        // Для других кнопок
-        if (otherButtonsPressed)
+        // Обработка ненажимных кнопок (должны срабатывать однократно при нажатии)
+        if (otherButtonsPressed && !wasOtherButtonsPressed)
         {
-            if (soundSource != null && !soundSource.IsPlaying && isReadySoundOtherButtons)
+            if (soundSource != null)
             {
-                soundSource.Play(); // Воспроизвести звук
-                
-            }
-            isReadySoundOtherButtons = false; // Заблокировать повторный вызов до отпускания кнопки
-        }
-        else
-        {
-            isReadySoundOtherButtons = true; // Сбрасываем готовность для остальных кнопок
-        }
-
-        // Остановка звука, если кнопки не нажаты
-        if (!closeDoorsPressed && !otherButtonsPressed)
-        {
-            if (soundSource != null && soundSource.IsPlaying)
-            {
-                soundSource.Stop(); // Остановить звук
-                soundSource.Time = 0;
+                soundSource.Play();
             }
         }
+        
+        wasOtherButtonsPressed = otherButtonsPressed;
+        
+        // Убрали автоматическую остановку звука - 
+        // ненажимные кнопки должны проиграть звук полностью
     }
 }
